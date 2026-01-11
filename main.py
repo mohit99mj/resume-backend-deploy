@@ -1,0 +1,27 @@
+# backend/app/main.py
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware  # Ye line new hai
+from app.core.config import settings
+from app.api.v1.endpoints import router as api_router
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.PROJECT_VERSION
+)
+
+# --- NEW: CORS SETUP (Browser permission ke liye) ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Sabko allow kar rahe hain (Development ke liye)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+# ----------------------------------------------------
+
+# Routes Include karna
+app.include_router(api_router, prefix=settings.API_V1_STR)
+
+@app.get("/")
+def root():
+    return {"message": "Welcome to AI Resume Builder Pro API (Server is Live)"}
