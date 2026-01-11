@@ -1,27 +1,21 @@
-# backend/app/main.py
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware  # Ye line new hai
-from app.core.config import settings
+from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.endpoints import router as api_router
 
-app = FastAPI(
-    title=settings.PROJECT_NAME,
-    version=settings.PROJECT_VERSION
-)
+app = FastAPI(title="AI Resume Builder")
 
-# --- NEW: CORS SETUP (Browser permission ke liye) ---
+# CORS Setup (Zaroori hai taaki Mobile App connect ho sake)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Sabko allow kar rahe hain (Development ke liye)
+    allow_origins=["*"],  # Sabko allow karega (Laptop, Phone, etc.)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# ----------------------------------------------------
 
-# Routes Include karna
-app.include_router(api_router, prefix=settings.API_V1_STR)
+# Router Connect kar rahe hain
+app.include_router(api_router, prefix="/api/v1")
 
 @app.get("/")
-def root():
-    return {"message": "Welcome to AI Resume Builder Pro API (Server is Live)"}
+def read_root():
+    return {"status": "online", "message": "AI Resume Builder Backend is Running!"}
