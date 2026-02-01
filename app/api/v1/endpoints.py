@@ -19,12 +19,13 @@ def create_resume(data: ResumeCreate):
     
     try:
         if not GEMINI_API_KEY:
-            raise Exception("Gemini API Key Missing")
+            # If no key, return original data without crashing
+            print("⚠️ Gemini Key Missing - Skipping AI")
+            return {"id": str(uuid.uuid4()), **ai_enhanced_data}
 
-        # 🔥 Init New Google GenAI Client
         client = genai.Client(api_key=GEMINI_API_KEY)
 
-        # 🔥 FIXED PROMPT
+        # 🔥 PROMPT
         prompt = f"""
         You are an Expert Resume Writer. Output strictly valid JSON.
         
@@ -32,72 +33,83 @@ def create_resume(data: ResumeCreate):
         {json.dumps(data.model_dump(), default=str)}
 
         YOUR TASKS:
-        1. **SUMMARY:** Write a professional summary based on the Job Role.
-        
-        2. **EXPERIENCE:** - If user provided details, POLISH them.
-           - If user provided NO experience, GENERATE generic entries (e.g., "Freelance Project").
-           - **DATE RULE:** DO NOT invent dates. If user input dates are empty, keep them EMPTY string ("").
-           - **COMPANY RULE:** If company missing, use "Independent Project" or "Freelance".
-        
-        3. **PROJECTS (IMPORTANT):** - **If the user's project list is EMPTY, GENERATE 2 impressive projects relevant to the job role.**
-           - If provided, POLISH descriptions.
-           - Use 'title' for Project Name.
-        
-        4. **SKILLS:** If skills are missing, generate 6-8 relevant skills.
+        1. **SUMMARY:** Write a professional summary.
+        2. **EXPERIENCE:** - Use key "title" for Job Title.
+           - If NO experience provided, GENERATE 1 generic entry relevant to the job.
+           - Keep dates empty string "" if not provided.
+        3. **PROJECTS:** - Use key "title" for Project Name.
+           - If EMPTY, GENERATE 2 impressive projects.
+        4. **SKILLS:** Generate 6-8 relevant skills if missing.
 
         OUTPUT FORMAT:
-        - Return ONLY valid JSON matching the input structure. Do not include markdown code blocks.
+        - Return ONLY valid JSON matching the input structure. 
         """
 
-        # 🔥 New Generate Call (Gemini 1.5 Flash)
         response = client.models.generate_content(
-            model="gemini-3-flash-preview",
+            model="gemini-2.0-flash",
             contents=prompt,
-            config={
-                'response_mime_type': 'application/json'
-            }
+            config={'response_mime_type': 'application/json'}
         )
         
-        # Parse Response
         ai_response_text = response.text.strip()
         enhanced_json = json.loads(ai_response_text)
         
-        # --- MERGING & CLEANING ---
+        # --- SMART MERGING & FIXING ---
         
+        # 1. Summary
         if "summary" in enhanced_json: 
             ai_enhanced_data["summary"] = enhanced_json["summary"]
 
+        # 2. Skills
         if "skills" in enhanced_json:
             user_skills = set(data.skills)
             ai_skills = set(enhanced_json["skills"])
             ai_enhanced_data["skills"] = list(user_skills.union(ai_skills))
 
+        # 3. Experience (The Fix for 500 Error)
         if "experience" in enhanced_json:
             clean_exp = []
             for exp in enhanced_json["experience"]:
-                if "position" in exp and "title" not in exp: exp["title"] = exp.pop("position")
-                if "company" not in exp or not exp["company"]: exp["company"] = "Freelance"
+                # 🔥 FIX: AI sometimes calls it 'role' or 'job_title' or 'position'
+                if "title" not in exp:
+                    if "role" in exp: exp["title"] = exp.pop("role")
+                    elif "job_title" in exp: exp["title"] = exp.pop("job_title")
+                    elif "position" in exp: exp["title"] = exp.pop("position")
+                    else: exp["title"] = "Professional Role" # Fallback
+
+                # Company Fix
+                if "company" not in exp or not exp["company"]: 
+                    exp["company"] = "Freelance / Independent Project"
+                
+                # Date Fix
                 if "start_date" not in exp: exp["start_date"] = ""
                 if "end_date" not in exp: exp["end_date"] = ""
                 
+                # Description Fix
                 if "description" in exp and isinstance(exp["description"], list):
                      exp["description"] = "\n• ".join(exp["description"])
-                     if not exp["description"].startswith("•"): exp["description"] = "• " + exp["description"]
+                
+                if "description" not in exp: exp["description"] = ""
 
                 clean_exp.append(exp)
             
             if not data.experience or (data.experience and clean_exp):
                  ai_enhanced_data["experience"] = clean_exp
 
-        # Projects Logic
+        # 4. Projects (The Fix for Title)
         if "projects" in enhanced_json:
             clean_proj = []
             for proj in enhanced_json["projects"]:
-                if "name" in proj and "title" not in proj: proj["title"] = proj.pop("name")
-                
+                # 🔥 FIX: AI sometimes calls it 'name' or 'project_name'
+                if "title" not in proj:
+                    if "name" in proj: proj["title"] = proj.pop("name")
+                    elif "project_name" in proj: proj["title"] = proj.pop("project_name")
+                    else: proj["title"] = "Project"
+
                 if "description" in proj and isinstance(proj["description"], list):
                      proj["description"] = "\n• ".join(proj["description"])
-                     if not proj["description"].startswith("•"): proj["description"] = "• " + proj["description"]
+                
+                if "description" not in proj: proj["description"] = ""
                 
                 clean_proj.append(proj)
             
@@ -109,6 +121,8 @@ def create_resume(data: ResumeCreate):
 
     except Exception as e:
         print(f"❌ AI Error: {e}")
+        # Return original data on error (Prevents App Crash)
+        return {"id": str(uuid.uuid4()), **ai_enhanced_data}
     
     return {
         "id": str(uuid.uuid4()),
