@@ -1,7 +1,7 @@
 # backend/app/api/v1/endpoints.py
 import os
 import json
-import google.generativeai as genai
+from google import genai
 from fastapi import APIRouter
 from dotenv import load_dotenv
 from app.schemas.resume import ResumeCreate, ResumeResponse
@@ -9,13 +9,6 @@ import uuid
 
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-# 🔥 Configure Gemini
-if GEMINI_API_KEY:
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-    except Exception as e:
-        print(f"❌ Gemini Setup Error: {e}")
 
 router = APIRouter()
 
@@ -28,10 +21,10 @@ def create_resume(data: ResumeCreate):
         if not GEMINI_API_KEY:
             raise Exception("Gemini API Key Missing")
 
-        # 🔥 Gemini Model Init (Flash model is fast & cheap)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # 🔥 Init New Google GenAI Client
+        client = genai.Client(api_key=GEMINI_API_KEY)
 
-        # 🔥 FIXED PROMPT: Same logic as before
+        # 🔥 FIXED PROMPT
         prompt = f"""
         You are an Expert Resume Writer. Output strictly valid JSON.
         
@@ -53,19 +46,23 @@ def create_resume(data: ResumeCreate):
         4. **SKILLS:** If skills are missing, generate 6-8 relevant skills.
 
         OUTPUT FORMAT:
-        - Return ONLY valid JSON matching the input structure. Do not include markdown code blocks (```json ... ```).
+        - Return ONLY valid JSON matching the input structure. Do not include markdown code blocks.
         """
 
-        # 🔥 Gemini Generation Call (Force JSON Mode)
-        response = model.generate_content(
-            prompt,
-            generation_config={"response_mime_type": "application/json"}
+        # 🔥 New Generate Call (Gemini 1.5 Flash)
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=prompt,
+            config={
+                'response_mime_type': 'application/json'
+            }
         )
         
+        # Parse Response
         ai_response_text = response.text.strip()
         enhanced_json = json.loads(ai_response_text)
         
-        # --- MERGING & CLEANING (Same Logic Preserved) ---
+        # --- MERGING & CLEANING (Same Logic) ---
         
         if "summary" in enhanced_json: 
             ai_enhanced_data["summary"] = enhanced_json["summary"]
@@ -84,7 +81,7 @@ def create_resume(data: ResumeCreate):
                 if "company" not in exp or not exp["company"]: 
                     exp["company"] = "Freelance / Independent Project"
                 
-                # Date Fix (Strict: No Auto-Fill)
+                # Date Fix
                 if "start_date" not in exp: exp["start_date"] = ""
                 if "end_date" not in exp: exp["end_date"] = ""
                 
@@ -95,11 +92,10 @@ def create_resume(data: ResumeCreate):
 
                 clean_exp.append(exp)
             
-            # Agar user ne experience diya tha to update karo, nahi diya tha to AI ka generated lo
             if not data.experience or (data.experience and clean_exp):
                  ai_enhanced_data["experience"] = clean_exp
 
-        # 🔥 PROJECTS LOGIC FIX
+        # Projects Logic
         if "projects" in enhanced_json:
             clean_proj = []
             for proj in enhanced_json["projects"]:
@@ -111,7 +107,6 @@ def create_resume(data: ResumeCreate):
                 
                 clean_proj.append(proj)
             
-            # Agar user ne projects nahi diye the, to AI ke generated projects use karo
             if not data.projects or (data.projects and clean_proj):
                 ai_enhanced_data["projects"] = clean_proj
             
@@ -125,5 +120,3 @@ def create_resume(data: ResumeCreate):
         "id": str(uuid.uuid4()),
         **ai_enhanced_data
     }
-
-
