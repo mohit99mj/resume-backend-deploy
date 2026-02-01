@@ -51,7 +51,7 @@ def create_resume(data: ResumeCreate):
 
         # 🔥 New Generate Call (Gemini 1.5 Flash)
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-3-flash-preview",
             contents=prompt,
             config={
                 'response_mime_type': 'application/json'
@@ -62,7 +62,7 @@ def create_resume(data: ResumeCreate):
         ai_response_text = response.text.strip()
         enhanced_json = json.loads(ai_response_text)
         
-        # --- MERGING & CLEANING (Same Logic) ---
+        # --- MERGING & CLEANING ---
         
         if "summary" in enhanced_json: 
             ai_enhanced_data["summary"] = enhanced_json["summary"]
@@ -76,16 +76,10 @@ def create_resume(data: ResumeCreate):
             clean_exp = []
             for exp in enhanced_json["experience"]:
                 if "position" in exp and "title" not in exp: exp["title"] = exp.pop("position")
-                
-                # Company Fix
-                if "company" not in exp or not exp["company"]: 
-                    exp["company"] = "Freelance / Independent Project"
-                
-                # Date Fix
+                if "company" not in exp or not exp["company"]: exp["company"] = "Freelance"
                 if "start_date" not in exp: exp["start_date"] = ""
                 if "end_date" not in exp: exp["end_date"] = ""
                 
-                # Bullet Points Fix
                 if "description" in exp and isinstance(exp["description"], list):
                      exp["description"] = "\n• ".join(exp["description"])
                      if not exp["description"].startswith("•"): exp["description"] = "• " + exp["description"]
