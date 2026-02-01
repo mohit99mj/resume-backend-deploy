@@ -1,24 +1,21 @@
 # backend/app/api/v1/endpoints.py
 import os
 import json
-from openai import OpenAI
+import google.generativeai as genai
 from fastapi import APIRouter
 from dotenv import load_dotenv
 from app.schemas.resume import ResumeCreate, ResumeResponse
 import uuid
 
 load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-client = None
-if GROQ_API_KEY:
+# 🔥 Configure Gemini
+if GEMINI_API_KEY:
     try:
-        client = OpenAI(
-            api_key=GROQ_API_KEY,
-            base_url="https://api.groq.com/openai/v1",
-        )
+        genai.configure(api_key=GEMINI_API_KEY)
     except Exception as e:
-        print(f"❌ Client Setup Error: {e}")
+        print(f"❌ Gemini Setup Error: {e}")
 
 router = APIRouter()
 
@@ -28,12 +25,15 @@ def create_resume(data: ResumeCreate):
     ai_enhanced_data = data.model_dump()
     
     try:
-        if not client:
-            raise Exception("API Key Missing")
+        if not GEMINI_API_KEY:
+            raise Exception("Gemini API Key Missing")
 
-        # 🔥 FIXED PROMPT: Projects Generate honge agar missing hain
+        # 🔥 Gemini Model Init (Flash model is fast & cheap)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+
+        # 🔥 FIXED PROMPT: Same logic as before
         prompt = f"""
-        You are an Expert Resume Writer.
+        You are an Expert Resume Writer. Output strictly valid JSON.
         
         USER INPUT DATA:
         {json.dumps(data.model_dump(), default=str)}
@@ -53,22 +53,19 @@ def create_resume(data: ResumeCreate):
         4. **SKILLS:** If skills are missing, generate 6-8 relevant skills.
 
         OUTPUT FORMAT:
-        - Return ONLY valid JSON matching the input structure.
+        - Return ONLY valid JSON matching the input structure. Do not include markdown code blocks (```json ... ```).
         """
 
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": "You are a JSON-only bot. Output strictly valid JSON."},
-                {"role": "user", "content": prompt}
-            ],
-            model="llama-3.3-70b-versatile",
-            response_format={"type": "json_object"}
+        # 🔥 Gemini Generation Call (Force JSON Mode)
+        response = model.generate_content(
+            prompt,
+            generation_config={"response_mime_type": "application/json"}
         )
         
-        ai_response_text = chat_completion.choices[0].message.content.strip()
+        ai_response_text = response.text.strip()
         enhanced_json = json.loads(ai_response_text)
         
-        # --- MERGING & CLEANING ---
+        # --- MERGING & CLEANING (Same Logic Preserved) ---
         
         if "summary" in enhanced_json: 
             ai_enhanced_data["summary"] = enhanced_json["summary"]
