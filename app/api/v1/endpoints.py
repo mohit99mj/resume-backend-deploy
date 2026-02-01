@@ -125,3 +125,5 @@ def create_resume(data: ResumeCreate):
         "id": str(uuid.uuid4()),
         **ai_enhanced_data
     }
+
+
