@@ -133,4 +133,3 @@ def create_resume(data: ResumeCreate):
 
 
 
-abhi current ye hai tum chatgpt ai ka use karo gpt-5-nano ka
