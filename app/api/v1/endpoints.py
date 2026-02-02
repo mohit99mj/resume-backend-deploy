@@ -13,6 +13,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 router = APIRouter()
 
+
 @router.post("/create-resume", response_model=ResumeResponse)
 def create_resume(data: ResumeCreate):
     
@@ -131,3 +132,4 @@ def create_resume(data: ResumeCreate):
         "id": str(uuid.uuid4()),
         **ai_enhanced_data
     }
+
