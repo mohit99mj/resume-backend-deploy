@@ -2,4 +2,4 @@ fastapi
 uvicorn
 pydantic[email]
 python-dotenv
-openai
+google-genai
