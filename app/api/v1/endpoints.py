@@ -1,14 +1,15 @@
 # backend/app/api/v1/endpoints.py
 import os
 import json
-from google import genai
+from openai import OpenAI
 from fastapi import APIRouter
 from dotenv import load_dotenv
 from app.schemas.resume import ResumeCreate, ResumeResponse
 import uuid
 
 load_dotenv()
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# ⚠️ Make sure to add OPENAI_API_KEY in Render Dashboard
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 router = APIRouter()
 
@@ -18,12 +19,11 @@ def create_resume(data: ResumeCreate):
     ai_enhanced_data = data.model_dump()
     
     try:
-        if not GEMINI_API_KEY:
-            # If no key, return original data without crashing
-            print("⚠️ Gemini Key Missing - Skipping AI")
+        if not OPENAI_API_KEY:
+            print("⚠️ OpenAI Key Missing - Skipping AI")
             return {"id": str(uuid.uuid4()), **ai_enhanced_data}
 
-        client = genai.Client(api_key=GEMINI_API_KEY)
+        client = OpenAI(api_key=OPENAI_API_KEY)
 
         # 🔥 PROMPT
         prompt = f"""
@@ -45,16 +45,20 @@ def create_resume(data: ResumeCreate):
         - Return ONLY valid JSON matching the input structure. 
         """
 
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt,
-            config={'response_mime_type': 'application/json'}
+        # 🔥 Using gpt-4o-mini (Best 'Nano' equivalent currently available)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant designed to output JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"}
         )
         
-        ai_response_text = response.text.strip()
+        ai_response_text = response.choices[0].message.content.strip()
         enhanced_json = json.loads(ai_response_text)
         
-        # --- SMART MERGING & FIXING ---
+        # --- SMART MERGING & FIXING (Preserved to prevent 500 Error) ---
         
         # 1. Summary
         if "summary" in enhanced_json: 
@@ -66,16 +70,16 @@ def create_resume(data: ResumeCreate):
             ai_skills = set(enhanced_json["skills"])
             ai_enhanced_data["skills"] = list(user_skills.union(ai_skills))
 
-        # 3. Experience (The Fix for 500 Error)
+        # 3. Experience
         if "experience" in enhanced_json:
             clean_exp = []
             for exp in enhanced_json["experience"]:
-                # 🔥 FIX: AI sometimes calls it 'role' or 'job_title' or 'position'
+                # 🔥 FIX: AI sometimes calls it 'role' or 'job_title'
                 if "title" not in exp:
                     if "role" in exp: exp["title"] = exp.pop("role")
                     elif "job_title" in exp: exp["title"] = exp.pop("job_title")
                     elif "position" in exp: exp["title"] = exp.pop("position")
-                    else: exp["title"] = "Professional Role" # Fallback
+                    else: exp["title"] = "Professional Role"
 
                 # Company Fix
                 if "company" not in exp or not exp["company"]: 
@@ -96,7 +100,7 @@ def create_resume(data: ResumeCreate):
             if not data.experience or (data.experience and clean_exp):
                  ai_enhanced_data["experience"] = clean_exp
 
-        # 4. Projects (The Fix for Title)
+        # 4. Projects
         if "projects" in enhanced_json:
             clean_proj = []
             for proj in enhanced_json["projects"]:
@@ -121,7 +125,6 @@ def create_resume(data: ResumeCreate):
 
     except Exception as e:
         print(f"❌ AI Error: {e}")
-        # Return original data on error (Prevents App Crash)
         return {"id": str(uuid.uuid4()), **ai_enhanced_data}
     
     return {
